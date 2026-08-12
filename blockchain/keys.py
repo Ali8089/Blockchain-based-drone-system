@@ -20,9 +20,9 @@ Deliberate separation of key storage:
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Iterator
 
@@ -76,11 +76,21 @@ def _known_nodes_lock() -> Iterator[None]:
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = KEYS_DIR / ".known_nodes.lock"
     with open(lock_path, "w") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def generate_node_keypair(node_id: str, overwrite: bool = False) -> None:
